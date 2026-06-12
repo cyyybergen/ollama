@@ -11,6 +11,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/ledongthuc/pdf"
+
+	"github.com/ollama/ollama/app/docfiles"
 )
 
 // convertBytesToText converts raw file bytes to text based on file extension
@@ -28,8 +30,13 @@ func convertBytesToText(data []byte, filename string) string {
 		return text
 	}
 
+	// Document formats (csv, xlsx, ods, docx, odt) are extracted to text
+	if text, handled := docfiles.ExtractText(data, filename); handled {
+		return text
+	}
+
 	binaryExtensions := []string{
-		".xlsx", ".pptx", ".zip", ".tar", ".gz", ".rar",
+		".pptx", ".zip", ".tar", ".gz", ".rar",
 		".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg", ".ico",
 		".mp3", ".mp4", ".avi", ".mov", ".wmv", ".flv", ".webm",
 		".exe", ".dll", ".so", ".dylib", ".app", ".dmg", ".pkg",

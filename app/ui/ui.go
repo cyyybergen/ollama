@@ -23,6 +23,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/ollama/ollama/api"
+	"github.com/ollama/ollama/app/docfiles"
 	"github.com/ollama/ollama/app/server"
 	"github.com/ollama/ollama/app/store"
 	"github.com/ollama/ollama/app/tools"
@@ -285,6 +286,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("DELETE /api/v1/chat/{id}", handle(s.deleteChat))
 	mux.Handle("POST /api/v1/create-chat", handle(s.createChat))
 	mux.Handle("PUT /api/v1/chat/{id}/rename", handle(s.renameChat))
+	mux.Handle("POST /api/v1/chat/{id}/open-file", handle(s.openChatFile))
 
 	mux.Handle("GET /api/v1/inference-compute", handle(s.getInferenceCompute))
 	mux.Handle("POST /api/v1/model/upstream", handle(s.modelUpstream))
@@ -852,10 +854,10 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) error {
 	registry := tools.NewRegistry()
 	var browser *tools.Browser
 	ctx = tools.WithAllowedDirectURLs(ctx, userMessageText(chat.Messages))
+	hasToolsCapability := slices.Contains(details.Capabilities, model.CapabilityTools)
 
 	if !hasAttachments {
 		WebSearchEnabled := req.WebSearch != nil && *req.WebSearch
-		hasToolsCapability := slices.Contains(details.Capabilities, model.CapabilityTools)
 
 		if WebSearchEnabled && hasToolsCapability {
 			if supportsBrowserTools(req.Model) {
@@ -870,6 +872,22 @@ func (s *Server) chat(w http.ResponseWriter, r *http.Request) error {
 			} else {
 				registry.Register(&tools.WebSearch{})
 				registry.Register(&tools.WebFetch{})
+			}
+		}
+	}
+
+	// Enable document tools when the model supports tools and either the
+	// request asks for them or the chat contains document attachments
+	// (csv, xlsx, ods, docx, odt).
+	fileToolsRequested := req.FileTools != nil && *req.FileTools
+	if hasToolsCapability && (fileToolsRequested || chatHasDocuments(chat.Messages)) {
+		if workspace, err := chatWorkspaceDir(chat.ID); err != nil {
+			s.log().Error("failed to resolve chat workspace", "error", err, "chat", chat.ID)
+		} else if err := syncAttachmentsToWorkspace(workspace, chat.Messages); err != nil {
+			s.log().Error("failed to sync attachments to workspace", "error", err, "chat", chat.ID)
+		} else {
+			for _, tool := range tools.NewDocumentTools(workspace) {
+				registry.Register(tool)
 			}
 		}
 	}
@@ -1298,6 +1316,40 @@ func (s *Server) getChat(w http.ResponseWriter, r *http.Request) error {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(data)
+	return nil
+}
+
+// openChatFile opens a file from the chat's workspace with the OS default application.
+func (s *Server) openChatFile(w http.ResponseWriter, r *http.Request) error {
+	cid := r.PathValue("id")
+	if cid == "" {
+		return fmt.Errorf("chat ID is required")
+	}
+
+	var req struct {
+		Filename string `json:"filename"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		return fmt.Errorf("invalid request body: %w", err)
+	}
+
+	dir, err := chatWorkspaceDir(cid)
+	if err != nil {
+		return err
+	}
+	path, err := docfiles.SafeJoin(dir, req.Filename)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(path); err != nil {
+		return fmt.Errorf("file not found: %s", req.Filename)
+	}
+	if err := openWithDefaultApp(path); err != nil {
+		return fmt.Errorf("failed to open file: %w", err)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 	return nil
 }
 
