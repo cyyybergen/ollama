@@ -405,7 +405,7 @@ func EditSpreadsheet(path, sheet string, edits []CellEdit) error {
 			return fmt.Errorf("invalid cell reference %q: %w", edit.Cell, err)
 		}
 		var value any = edit.Value
-		if n, err := strconv.ParseFloat(edit.Value, 64); err == nil && strings.TrimSpace(edit.Value) != "" {
+		if n, err := strconv.ParseFloat(edit.Value, 64); err == nil {
 			value = n
 		}
 		if err := f.SetCellValue(sheet, edit.Cell, value); err != nil {
