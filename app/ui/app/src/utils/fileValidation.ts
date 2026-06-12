@@ -4,6 +4,9 @@ import { Model } from "@/gotypes";
 export const TEXT_FILE_EXTENSIONS = [
   "pdf",
   "docx",
+  "odt",
+  "xlsx",
+  "ods",
   "txt",
   "md",
   "csv",

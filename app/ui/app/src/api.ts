@@ -336,6 +336,24 @@ export async function deleteChat(chatId: string): Promise<void> {
   }
 }
 
+// Open a file from the chat workspace with the OS default application
+export async function openChatFile(
+  chatId: string,
+  filename: string,
+): Promise<void> {
+  const response = await fetch(`${API_BASE}/api/v1/chat/${chatId}/open-file`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ filename }),
+  });
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(error || "Failed to open file");
+  }
+}
+
 // Get upstream information for model staleness checking
 export async function getModelUpstreamInfo(
   model: Model,

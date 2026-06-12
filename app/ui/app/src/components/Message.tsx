@@ -4,6 +4,8 @@ import StreamingMarkdownContent from "./StreamingMarkdownContent";
 import { ImageThumbnail } from "./ImageThumbnail";
 import { isImageFile } from "@/utils/imageUtils";
 import CopyButton from "./CopyButton";
+import { openChatFile } from "@/api";
+import { useParams } from "@tanstack/react-router";
 import React, { useState, useMemo, useRef } from "react";
 
 const Message = React.memo(
@@ -253,6 +255,77 @@ function BrowserToolResult({
   );
 }
 
+const DOCUMENT_TOOL_NAMES = [
+  "edit_spreadsheet",
+  "write_csv",
+  "write_document",
+];
+
+// DocumentToolResult renders a file produced or edited by a document tool,
+// with a button to open it in the OS default application (e.g. Excel).
+function DocumentToolResult({
+  filename,
+  action,
+  content,
+}: {
+  filename: string;
+  action: string;
+  content?: string;
+}) {
+  const { chatId } = useParams({ strict: false }) as { chatId?: string };
+  const [error, setError] = useState<string | null>(null);
+
+  const handleOpen = async () => {
+    if (!chatId) return;
+    setError(null);
+    try {
+      await openChatFile(chatId, filename);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to open file");
+    }
+  };
+
+  return (
+    <div className="space-y-1">
+      <div className="inline-flex items-center gap-2 rounded-lg border border-neutral-200 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800 px-3 py-2 text-sm text-neutral-700 dark:text-neutral-300">
+        <svg
+          className="h-4 w-4 flex-shrink-0"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+          <polyline points="14 2 14 8 20 8"></polyline>
+        </svg>
+        <span className="font-medium break-all">{filename}</span>
+        <span className="text-neutral-400 dark:text-neutral-500">
+          {action}
+        </span>
+        {chatId && (
+          <button
+            type="button"
+            onClick={handleOpen}
+            className="ml-1 rounded-md bg-neutral-200 dark:bg-neutral-700 px-2 py-0.5 text-xs font-medium hover:bg-neutral-300 dark:hover:bg-neutral-600 transition-colors"
+          >
+            Open
+          </button>
+        )}
+      </div>
+      {error && (
+        <div className="text-xs text-red-500 dark:text-red-400">{error}</div>
+      )}
+      {content && (
+        <div className="text-xs text-neutral-500 dark:text-neutral-500">
+          {content}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ToolRoleContent({
   message,
   browserToolResult,
@@ -271,6 +344,24 @@ function ToolRoleContent({
     return (
       <BrowserToolResult toolResult={browserToolResult} content={content} />
     );
+  }
+  if (
+    DOCUMENT_TOOL_NAMES.includes(toolName) &&
+    rawToolResult &&
+    typeof rawToolResult === "object"
+  ) {
+    const docResult = rawToolResult as { filename?: unknown; action?: unknown };
+    if (typeof docResult.filename === "string") {
+      return (
+        <DocumentToolResult
+          filename={docResult.filename}
+          action={
+            typeof docResult.action === "string" ? docResult.action : "written"
+          }
+          content={content}
+        />
+      );
+    }
   }
   return (
     // collapsable tool result with raw json
